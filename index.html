@@ -467,8 +467,23 @@ function renderGraficos(lista) {
   graficos.receitas = new Chart(document.getElementById("graficoReceitas"), {
     type:"doughnut",
     data:{ labels:rC.map(x=>x[0]), datasets:[{ data:rC.map(x=>x[1]),
-      backgroundColor:["#2E8B57","#5BB07E","#86C69D","#B4D9BC","#2E4A78","#5F8CA8","#A6A8B8"] }]},
-    options:{ plugins:{legend:{position:"right"}} }
+      backgroundColor:[
+        "#7B5EA7",  // roxo médio
+        "#A67EC8",  // roxo suave
+        "#C9A8E0",  // lavanda
+        "#E8A8CB",  // rosa suave
+        "#7B9FD4",  // azul suave
+        "#5BBFAD",  // verde-azulado
+        "#F0B46A",  // âmbar suave
+        "#D4889A",  // rosa antigo
+        "#9BB8D4",  // azul acinzentado
+        "#B89AD4",  // lilás
+      ],
+      borderWidth: 2,
+      borderColor: "#fff"
+    }]},
+    options:{ plugins:{legend:{position:"right", labels:{boxWidth:14, padding:10, font:{size:12}}}},
+              cutout:"42%" }
   });
 
   // Contas
