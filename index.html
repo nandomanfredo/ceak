@@ -1,0 +1,549 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard Financeiro — Sociedade Espírita Allan Kardec</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --azul:#1A2F4D; --azul2:#2E4A78; --verde:#2E8B57; --vermelho:#B53D3D;
+    --bg:#F5F7FB; --card:#FFFFFF; --borda:#D9DEE8; --texto:#1F2733; --muted:#5D6B82;
+    --zebra:#F3F5F8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif}
+  body{background:var(--bg);color:var(--texto);padding:20px;font-size:14px}
+  h1{color:var(--azul);font-size:22px;margin-bottom:2px}
+  h2{color:var(--azul);font-size:16px;margin-bottom:10px;border-bottom:2px solid var(--azul);padding-bottom:4px}
+  .header{background:var(--card);padding:18px 22px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05);margin-bottom:16px}
+  .entidade-info{color:var(--muted);font-size:12px;margin-top:4px;line-height:1.5}
+  .filtros{background:var(--card);padding:16px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+  .filtro-grupo{display:flex;flex-direction:column;gap:4px}
+  .filtro-grupo label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px}
+  .filtro-grupo select, .filtro-grupo input{padding:6px 10px;border:1px solid var(--borda);border-radius:6px;font-size:13px;min-width:140px}
+  .btn{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s}
+  .btn-primario{background:var(--azul);color:#fff}
+  .btn-primario:hover{background:var(--azul2)}
+  .btn-secundario{background:#E6EEF7;color:var(--azul)}
+  .btn-verde{background:var(--verde);color:#fff}
+  .btn-vermelho{background:var(--vermelho);color:#fff}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+  .card{background:var(--card);padding:14px 16px;border-radius:10px;border-left:4px solid var(--azul);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  .card.receita{border-left-color:var(--verde)}
+  .card.despesa{border-left-color:var(--vermelho)}
+  .card.saldo{border-left-color:var(--azul2)}
+  .card h3{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+  .card .valor{font-size:22px;font-weight:700;color:var(--texto)}
+  .card.receita .valor{color:var(--verde)}
+  .card.despesa .valor{color:var(--vermelho)}
+  .card small{font-size:11px;color:var(--muted);display:block;margin-top:2px}
+  .graficos{display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:16px}
+  @media(max-width:900px){.graficos{grid-template-columns:1fr}}
+  .grafico-box{background:var(--card);padding:16px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  .grafico-box canvas{max-height:280px}
+  .tabela-wrap{background:var(--card);padding:16px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05);margin-bottom:16px;max-height:600px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{position:sticky;top:0;background:var(--azul);color:#fff;padding:8px 10px;text-align:left;font-weight:600;z-index:1}
+  td{padding:6px 10px;border-bottom:1px solid var(--borda)}
+  tr:nth-child(even) td{background:var(--zebra)}
+  tr.caixa td{background:#FFF9E6 !important}
+  tr:hover td{background:#E6EEF7 !important}
+  .valor-positivo{color:var(--verde);font-weight:600;text-align:right}
+  .valor-negativo{color:var(--vermelho);font-weight:600;text-align:right}
+  .tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;text-transform:uppercase}
+  .tag-cc{background:#E6EEF7;color:var(--azul)}
+  .tag-poup{background:#E6F7EE;color:var(--verde)}
+  .tag-caixa{background:#FFF3CD;color:#B7860B}
+  /* Modal caixa */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:100}
+  .modal-bg.ativo{display:flex}
+  .modal{background:#fff;padding:22px;border-radius:10px;width:95%;max-width:500px;box-shadow:0 10px 25px rgba(0,0,0,.2)}
+  .modal h2{margin-bottom:16px}
+  .form-grupo{margin-bottom:12px}
+  .form-grupo label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase}
+  .form-grupo input, .form-grupo select, .form-grupo textarea{width:100%;padding:8px 10px;border:1px solid var(--borda);border-radius:6px;font-size:13px;font-family:inherit}
+  .form-acoes{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+  .alerta{padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:13px}
+  .alerta-info{background:#E6EEF7;color:var(--azul);border-left:4px solid var(--azul2)}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Dashboard Financeiro — Sociedade Espírita Allan Kardec</h1>
+  <div class="entidade-info">
+    CNPJ 02.456.471/0001-34 &nbsp;|&nbsp; Caixa Econômica Federal &nbsp;|&nbsp; Agência 01784
+    &nbsp;|&nbsp; C/C 000577546739-2 &nbsp;|&nbsp; Poupança 000738979335-0
+  </div>
+</div>
+
+<div class="alerta alerta-info">
+  <strong>💡 Como usar:</strong> use os filtros para recortar a visão por conta, período, categoria ou tipo.
+  O botão <strong>+ Lançamento de Caixa</strong> registra movimentos em espécie que não passam pelo banco.
+  Os dados ficam salvos no seu navegador e podem ser exportados/importados via CSV.
+</div>
+
+<div class="filtros">
+  <div class="filtro-grupo">
+    <label>Visão</label>
+    <select id="fVisao">
+      <option value="analitica">Analítica (todos lançamentos)</option>
+      <option value="sintetica">Sintética (resumida)</option>
+    </select>
+  </div>
+  <div class="filtro-grupo">
+    <label>Conta</label>
+    <select id="fConta">
+      <option value="">Todas</option>
+      <option value="CONTA_CORRENTE">Conta Corrente</option>
+      <option value="POUPANCA">Poupança</option>
+      <option value="CAIXA">Caixa (dinheiro)</option>
+    </select>
+  </div>
+  <div class="filtro-grupo">
+    <label>Tipo</label>
+    <select id="fTipo">
+      <option value="">Todos</option>
+      <option value="RECEITA">Receita</option>
+      <option value="DESPESA">Despesa</option>
+    </select>
+  </div>
+  <div class="filtro-grupo">
+    <label>Categoria</label>
+    <select id="fCategoria"><option value="">Todas</option></select>
+  </div>
+  <div class="filtro-grupo">
+    <label>Mês inicial</label>
+    <input type="month" id="fMesIni">
+  </div>
+  <div class="filtro-grupo">
+    <label>Mês final</label>
+    <input type="month" id="fMesFim">
+  </div>
+  <div class="filtro-grupo">
+    <label>Busca (histórico/nome)</label>
+    <input type="text" id="fBusca" placeholder="ex: CELESC, PIX...">
+  </div>
+  <button class="btn btn-secundario" onclick="limparFiltros()">Limpar</button>
+</div>
+
+<div class="toolbar">
+  <button class="btn btn-verde" onclick="abrirModalCaixa()">+ Lançamento de Caixa</button>
+  <button class="btn btn-secundario" onclick="exportarCaixa()">↓ Exportar lançamentos de caixa (CSV)</button>
+  <button class="btn btn-secundario" onclick="document.getElementById('importar').click()">↑ Importar caixa (CSV)</button>
+  <input type="file" id="importar" accept=".csv" style="display:none" onchange="importarCaixa(event)">
+  <button class="btn btn-secundario" onclick="exportarFiltrado()">↓ Exportar visão atual (CSV)</button>
+</div>
+
+<div class="cards" id="cardsResumo"></div>
+
+<div class="graficos">
+  <div class="grafico-box">
+    <h2>Evolução Mensal</h2>
+    <canvas id="graficoEvolucao"></canvas>
+  </div>
+  <div class="grafico-box">
+    <h2>Despesas por Categoria</h2>
+    <canvas id="graficoDespesas"></canvas>
+  </div>
+</div>
+
+<div class="graficos">
+  <div class="grafico-box">
+    <h2>Receitas por Categoria</h2>
+    <canvas id="graficoReceitas"></canvas>
+  </div>
+  <div class="grafico-box">
+    <h2>Distribuição por Conta</h2>
+    <canvas id="graficoContas"></canvas>
+  </div>
+</div>
+
+<div class="tabela-wrap">
+  <h2 id="tituloTabela">Lançamentos (analítico)</h2>
+  <table id="tabela">
+    <thead>
+      <tr>
+        <th>Data</th><th>Conta</th><th>Tipo</th><th>Categoria</th>
+        <th>Histórico</th><th>Contraparte</th>
+        <th style="text-align:right">Entrada</th><th style="text-align:right">Saída</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<!-- Modal Lançamento Caixa -->
+<div class="modal-bg" id="modalCaixa" onclick="if(event.target===this)fecharModal()">
+  <div class="modal">
+    <h2>Novo Lançamento de Caixa (dinheiro)</h2>
+    <form id="formCaixa" onsubmit="salvarCaixa(event)">
+      <div class="form-grupo"><label>Data*</label>
+        <input type="date" id="cData" required></div>
+      <div class="form-grupo"><label>Tipo*</label>
+        <select id="cTipo" required onchange="atualizarCategoriasModal()">
+          <option value="">Selecione</option>
+          <option value="RECEITA">Receita (entrada)</option>
+          <option value="DESPESA">Despesa (saída)</option>
+        </select></div>
+      <div class="form-grupo"><label>Categoria*</label>
+        <select id="cCategoria" required></select></div>
+      <div class="form-grupo"><label>Descrição*</label>
+        <input type="text" id="cHistorico" required placeholder="ex: Doação durante palestra de 15/03"></div>
+      <div class="form-grupo"><label>Contraparte (opcional)</label>
+        <input type="text" id="cNome" placeholder="ex: Sr. João da Silva"></div>
+      <div class="form-grupo"><label>Valor (R$)*</label>
+        <input type="number" id="cValor" step="0.01" min="0.01" required placeholder="0,00"></div>
+      <div class="form-acoes">
+        <button type="button" class="btn btn-secundario" onclick="fecharModal()">Cancelar</button>
+        <button type="submit" class="btn btn-verde">Salvar Lançamento</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="dados.js"></script>
+<script>
+// === PLANO DE CONTAS (CATEGORIAS) ===
+const CATEGORIAS = {
+  RECEITA: [
+    "Doações", "Mensalidades / Contribuições", "Rendimentos Poupança",
+    "Eventos / Arrecadações", "Clube do Livro", "Transferências",
+    "Outras Receitas"
+  ],
+  DESPESA: [
+    "Energia Elétrica", "Água", "Internet / Telefonia",
+    "Obras / Manutenção", "Material de Escritório",
+    "Clube do Livro", "Eventos", "Federação Espírita (FEC)",
+    "Tarifas Bancárias", "Transferências", "Outras Despesas"
+  ]
+};
+
+// === DADOS ===
+let DADOS = window.DADOS_BANCARIOS || [];
+let CAIXA = JSON.parse(localStorage.getItem("seak_caixa") || "[]");
+
+function todosLancamentos() {
+  return [...DADOS, ...CAIXA].map(r => ({
+    ...r,
+    valor: parseFloat(r.valor),
+    valor_abs: parseFloat(r.valor_abs || Math.abs(r.valor))
+  }));
+}
+
+// === INICIALIZAÇÃO ===
+let graficos = {};
+
+function fmt(v) {
+  return new Intl.NumberFormat("pt-BR", {style:"currency", currency:"BRL"}).format(v);
+}
+function fmtData(s) {
+  const d = new Date(s);
+  return d.toLocaleDateString("pt-BR", {timeZone:"UTC"});
+}
+
+function popularCategorias() {
+  const todas = new Set();
+  todosLancamentos().forEach(r => todas.add(r.categoria));
+  CATEGORIAS.RECEITA.forEach(c=>todas.add(c));
+  CATEGORIAS.DESPESA.forEach(c=>todas.add(c));
+  const sel = document.getElementById("fCategoria");
+  sel.innerHTML = '<option value="">Todas</option>';
+  [...todas].sort().forEach(c => {
+    const o = document.createElement("option");
+    o.value = c; o.textContent = c;
+    sel.appendChild(o);
+  });
+}
+
+function atualizarCategoriasModal() {
+  const tipo = document.getElementById("cTipo").value;
+  const sel = document.getElementById("cCategoria");
+  sel.innerHTML = '<option value="">Selecione</option>';
+  if (tipo && CATEGORIAS[tipo]) {
+    CATEGORIAS[tipo].forEach(c => {
+      const o = document.createElement("option");
+      o.value = c; o.textContent = c;
+      sel.appendChild(o);
+    });
+  }
+}
+
+function aplicarFiltros(lista) {
+  const conta = document.getElementById("fConta").value;
+  const tipo = document.getElementById("fTipo").value;
+  const cat = document.getElementById("fCategoria").value;
+  const ini = document.getElementById("fMesIni").value;
+  const fim = document.getElementById("fMesFim").value;
+  const busca = document.getElementById("fBusca").value.toLowerCase().trim();
+  return lista.filter(r => {
+    if (conta && r.conta !== conta) return false;
+    if (tipo && r.tipo !== tipo) return false;
+    if (cat && r.categoria !== cat) return false;
+    if (ini && r.data.slice(0,7) < ini) return false;
+    if (fim && r.data.slice(0,7) > fim) return false;
+    if (busca) {
+      const h = (r.historico||"").toLowerCase();
+      const n = (r.nome||"").toLowerCase();
+      if (!h.includes(busca) && !n.includes(busca)) return false;
+    }
+    return true;
+  });
+}
+
+function renderCards(lista) {
+  const receitas = lista.filter(r=>r.valor>0).reduce((s,r)=>s+r.valor,0);
+  const despesas = lista.filter(r=>r.valor<0).reduce((s,r)=>s+r.valor,0);
+  const saldo = receitas + despesas;
+  const html = `
+    <div class="card receita"><h3>Receitas</h3><div class="valor">${fmt(receitas)}</div><small>${lista.filter(r=>r.valor>0).length} lançamentos</small></div>
+    <div class="card despesa"><h3>Despesas</h3><div class="valor">${fmt(despesas)}</div><small>${lista.filter(r=>r.valor<0).length} lançamentos</small></div>
+    <div class="card saldo"><h3>Saldo do período</h3><div class="valor">${fmt(saldo)}</div><small>${lista.length} lançamentos total</small></div>
+    <div class="card"><h3>Ticket médio doação</h3><div class="valor">${fmt(
+      (() => { const d = lista.filter(r=>r.categoria==='Doações'); return d.length ? d.reduce((s,r)=>s+r.valor,0)/d.length : 0; })()
+    )}</div><small>${lista.filter(r=>r.categoria==='Doações').length} doações</small></div>
+  `;
+  document.getElementById("cardsResumo").innerHTML = html;
+}
+
+function renderTabela(lista) {
+  const visao = document.getElementById("fVisao").value;
+  const tb = document.getElementById("tbody");
+  document.getElementById("tituloTabela").textContent = visao === "analitica"
+    ? `Lançamentos Analíticos (${lista.length})`
+    : `Resumo Sintético por Categoria`;
+
+  if (visao === "analitica") {
+    const rows = lista.sort((a,b)=>b.data.localeCompare(a.data)).slice(0, 2000).map(r => {
+      const classe = r.conta === "CAIXA" ? "caixa" : "";
+      const tagC = r.conta === "CONTA_CORRENTE" ? "tag-cc" : (r.conta === "POUPANCA" ? "tag-poup" : "tag-caixa");
+      const nomeC = r.conta === "CONTA_CORRENTE" ? "C/C" : (r.conta === "POUPANCA" ? "POUP" : "CAIXA");
+      const entrada = r.valor > 0 ? fmt(r.valor) : "";
+      const saida = r.valor < 0 ? fmt(Math.abs(r.valor)) : "";
+      return `<tr class="${classe}">
+        <td>${fmtData(r.data)}</td>
+        <td><span class="tag ${tagC}">${nomeC}</span></td>
+        <td>${r.tipo}</td>
+        <td>${r.categoria||'-'}</td>
+        <td>${(r.historico||'').slice(0,50)}</td>
+        <td>${(r.nome||'').slice(0,30)}</td>
+        <td class="valor-positivo">${entrada}</td>
+        <td class="valor-negativo">${saida}</td>
+      </tr>`;
+    }).join("");
+    tb.innerHTML = rows || '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">Nenhum lançamento encontrado.</td></tr>';
+  } else {
+    // Sintética: agrupar por (conta, tipo, categoria)
+    const agg = {};
+    lista.forEach(r => {
+      const k = `${r.conta}||${r.tipo}||${r.categoria}`;
+      if (!agg[k]) agg[k] = { conta:r.conta, tipo:r.tipo, categoria:r.categoria, qtd:0, total:0 };
+      agg[k].qtd++;
+      agg[k].total += r.valor;
+    });
+    const rows = Object.values(agg).sort((a,b)=>Math.abs(b.total)-Math.abs(a.total)).map(r => {
+      const tagC = r.conta === "CONTA_CORRENTE" ? "tag-cc" : (r.conta === "POUPANCA" ? "tag-poup" : "tag-caixa");
+      const nomeC = r.conta === "CONTA_CORRENTE" ? "C/C" : (r.conta === "POUPANCA" ? "POUP" : "CAIXA");
+      const cls = r.total >= 0 ? "valor-positivo" : "valor-negativo";
+      return `<tr>
+        <td>—</td>
+        <td><span class="tag ${tagC}">${nomeC}</span></td>
+        <td>${r.tipo}</td>
+        <td><strong>${r.categoria}</strong></td>
+        <td colspan="2">${r.qtd} lançamentos</td>
+        <td class="${cls}" colspan="2">${fmt(r.total)}</td>
+      </tr>`;
+    }).join("");
+    tb.innerHTML = rows || '<tr><td colspan="8">Nada.</td></tr>';
+  }
+}
+
+function renderGraficos(lista) {
+  // Evolução Mensal
+  const porMes = {};
+  lista.forEach(r => {
+    const m = r.data.slice(0,7);
+    if (!porMes[m]) porMes[m] = {receita:0, despesa:0};
+    if (r.valor > 0) porMes[m].receita += r.valor;
+    else porMes[m].despesa += Math.abs(r.valor);
+  });
+  const meses = Object.keys(porMes).sort();
+  const receitas = meses.map(m => porMes[m].receita);
+  const despesas = meses.map(m => porMes[m].despesa);
+
+  if (graficos.evolucao) graficos.evolucao.destroy();
+  graficos.evolucao = new Chart(document.getElementById("graficoEvolucao"), {
+    type:"bar",
+    data:{ labels:meses.map(m => {
+      const [a,mn] = m.split("-");
+      return `${mn}/${a.slice(2)}`;
+    }), datasets:[
+      { label:"Receitas", data:receitas, backgroundColor:"#2E8B57" },
+      { label:"Despesas", data:despesas, backgroundColor:"#B53D3D" }
+    ]},
+    options:{ responsive:true, plugins:{legend:{position:"bottom"}},
+      scales:{ y:{ ticks:{ callback: v => fmt(v).replace("R$","") }}}
+    }
+  });
+
+  // Despesas por Categoria
+  const despCat = {};
+  lista.filter(r=>r.valor<0).forEach(r => {
+    despCat[r.categoria] = (despCat[r.categoria]||0) + Math.abs(r.valor);
+  });
+  const dC = Object.entries(despCat).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if (graficos.despesas) graficos.despesas.destroy();
+  graficos.despesas = new Chart(document.getElementById("graficoDespesas"), {
+    type:"doughnut",
+    data:{ labels:dC.map(x=>x[0]), datasets:[{ data:dC.map(x=>x[1]),
+      backgroundColor:["#B53D3D","#D66653","#E8996B","#F0BD7E","#8C5F7F","#5F8CA8","#7FB069","#A6A8B8","#C79A9A","#8491A3"] }]},
+    options:{ plugins:{legend:{position:"right"}} }
+  });
+
+  // Receitas por Categoria
+  const recCat = {};
+  lista.filter(r=>r.valor>0).forEach(r => {
+    recCat[r.categoria] = (recCat[r.categoria]||0) + r.valor;
+  });
+  const rC = Object.entries(recCat).sort((a,b)=>b[1]-a[1]);
+  if (graficos.receitas) graficos.receitas.destroy();
+  graficos.receitas = new Chart(document.getElementById("graficoReceitas"), {
+    type:"doughnut",
+    data:{ labels:rC.map(x=>x[0]), datasets:[{ data:rC.map(x=>x[1]),
+      backgroundColor:["#2E8B57","#5BB07E","#86C69D","#B4D9BC","#2E4A78","#5F8CA8","#A6A8B8"] }]},
+    options:{ plugins:{legend:{position:"right"}} }
+  });
+
+  // Contas
+  const contas = {};
+  lista.forEach(r => {
+    if (!contas[r.conta]) contas[r.conta] = {rec:0, desp:0};
+    if (r.valor > 0) contas[r.conta].rec += r.valor;
+    else contas[r.conta].desp += Math.abs(r.valor);
+  });
+  const nomes = {CONTA_CORRENTE:"Conta Corrente", POUPANCA:"Poupança", CAIXA:"Caixa"};
+  const ck = Object.keys(contas);
+  if (graficos.contas) graficos.contas.destroy();
+  graficos.contas = new Chart(document.getElementById("graficoContas"), {
+    type:"bar",
+    data:{ labels:ck.map(c=>nomes[c]||c), datasets:[
+      { label:"Receitas", data:ck.map(c=>contas[c].rec), backgroundColor:"#2E8B57" },
+      { label:"Despesas", data:ck.map(c=>contas[c].desp), backgroundColor:"#B53D3D" }
+    ]},
+    options:{ indexAxis:"y", plugins:{legend:{position:"bottom"}} }
+  });
+}
+
+function atualizarTudo() {
+  const lista = aplicarFiltros(todosLancamentos());
+  renderCards(lista);
+  renderTabela(lista);
+  renderGraficos(lista);
+}
+
+// === CAIXA (manual) ===
+function abrirModalCaixa() {
+  document.getElementById("modalCaixa").classList.add("ativo");
+  document.getElementById("cData").valueAsDate = new Date();
+}
+function fecharModal() {
+  document.getElementById("modalCaixa").classList.remove("ativo");
+  document.getElementById("formCaixa").reset();
+}
+function salvarCaixa(e) {
+  e.preventDefault();
+  const valorAbs = parseFloat(document.getElementById("cValor").value);
+  const tipo = document.getElementById("cTipo").value;
+  const valor = tipo === "RECEITA" ? valorAbs : -valorAbs;
+  const reg = {
+    data: document.getElementById("cData").value,
+    mes: document.getElementById("cData").value.slice(0,7),
+    conta: "CAIXA",
+    origem: "CAIXA",
+    tipo: tipo,
+    categoria: document.getElementById("cCategoria").value,
+    subcategoria: "",
+    historico: document.getElementById("cHistorico").value,
+    nome: document.getElementById("cNome").value || "",
+    documento: "",
+    valor_abs: valorAbs,
+    valor: valor,
+    saldo: 0
+  };
+  CAIXA.push(reg);
+  localStorage.setItem("seak_caixa", JSON.stringify(CAIXA));
+  fecharModal();
+  atualizarTudo();
+  alert("Lançamento de caixa salvo!");
+}
+
+function exportarCaixa() {
+  if (!CAIXA.length) { alert("Nenhum lançamento de caixa registrado."); return; }
+  const cab = Object.keys(CAIXA[0]).join(";");
+  const linhas = CAIXA.map(r => Object.values(r).map(v => `"${String(v).replace(/"/g,'""')}"`).join(";"));
+  const csv = "\uFEFF" + cab + "\n" + linhas.join("\n");
+  baixarArquivo("lancamentos_caixa.csv", csv, "text/csv");
+}
+
+function importarCaixa(ev) {
+  const arq = ev.target.files[0];
+  if (!arq) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const txt = e.target.result.replace(/^\uFEFF/, "");
+    const linhas = txt.split(/\r?\n/).filter(l => l.trim());
+    const cab = linhas[0].split(";").map(c => c.replace(/^"|"$/g, ""));
+    const regs = linhas.slice(1).map(l => {
+      const vals = l.split(";").map(v => v.replace(/^"|"$/g, "").replace(/""/g, '"'));
+      const obj = {};
+      cab.forEach((c, i) => obj[c] = vals[i]);
+      obj.valor = parseFloat(obj.valor);
+      obj.valor_abs = parseFloat(obj.valor_abs);
+      return obj;
+    });
+    if (confirm(`Importar ${regs.length} lançamentos de caixa? (substitui os atuais)`)) {
+      CAIXA = regs;
+      localStorage.setItem("seak_caixa", JSON.stringify(CAIXA));
+      atualizarTudo();
+    }
+  };
+  reader.readAsText(arq, "utf-8");
+}
+
+function exportarFiltrado() {
+  const lista = aplicarFiltros(todosLancamentos());
+  if (!lista.length) { alert("Nada para exportar."); return; }
+  const campos = ["data","conta","tipo","categoria","subcategoria","historico","nome","valor_abs","valor","saldo"];
+  const cab = campos.join(";");
+  const linhas = lista.map(r => campos.map(c => `"${String(r[c]??"").replace(/"/g,'""')}"`).join(";"));
+  const csv = "\uFEFF" + cab + "\n" + linhas.join("\n");
+  baixarArquivo("visao_filtrada.csv", csv, "text/csv");
+}
+
+function baixarArquivo(nome, conteudo, tipo) {
+  const blob = new Blob([conteudo], {type: tipo});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nome;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function limparFiltros() {
+  ["fConta","fTipo","fCategoria","fMesIni","fMesFim","fBusca"].forEach(id => {
+    document.getElementById(id).value = "";
+  });
+  atualizarTudo();
+}
+
+// Inicializar
+popularCategorias();
+["fVisao","fConta","fTipo","fCategoria","fMesIni","fMesFim","fBusca"].forEach(id => {
+  document.getElementById(id).addEventListener("change", atualizarTudo);
+  document.getElementById(id).addEventListener("input", atualizarTudo);
+});
+atualizarTudo();
+</script>
+
+</body>
+</html>
