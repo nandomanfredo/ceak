@@ -65,6 +65,25 @@
   .alerta{padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:13px}
   .alerta-info{background:#E6EEF7;color:var(--azul);border-left:4px solid var(--azul2)}
   .toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  /* Checkboxes de conta */
+  .check-contas{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:4px 0}
+  .check-item{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;white-space:nowrap;padding:4px 8px;border-radius:6px;border:1px solid var(--borda);background:#fff}
+  .check-item input{cursor:pointer;accent-color:var(--azul);width:14px;height:14px}
+  .check-item:has(input:checked){background:var(--azul);color:#fff;border-color:var(--azul)}
+  .check-item:has(input:checked) input{accent-color:#fff}
+  /* Cards de saldo atual por conta */
+  .cards-contas{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+  @media(max-width:700px){.cards-contas{grid-template-columns:1fr 1fr}}
+  @media(max-width:450px){.cards-contas{grid-template-columns:1fr}}
+  .card-conta{background:var(--card);padding:14px 16px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05);border-left:4px solid var(--borda)}
+  .card-conta h3{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px}
+  .card-conta .valor-conta{font-size:21px;font-weight:700;color:var(--texto)}
+  .card-conta small{font-size:11px;color:var(--muted);display:block;margin-top:3px}
+  .card-conta.cc{border-left-color:var(--azul2)}
+  .card-conta.pp{border-left-color:var(--verde)}
+  .card-conta.cx{border-left-color:#B7860B}
+  .card-conta.positivo .valor-conta{color:var(--verde)}
+  .card-conta.negativo .valor-conta{color:var(--vermelho)}
 </style>
 </head>
 <body>
@@ -93,12 +112,11 @@
   </div>
   <div class="filtro-grupo">
     <label>Conta</label>
-    <select id="fConta">
-      <option value="">Todas</option>
-      <option value="CONTA_CORRENTE">Conta Corrente</option>
-      <option value="POUPANCA">Poupança</option>
-      <option value="CAIXA">Caixa (dinheiro)</option>
-    </select>
+    <div class="check-contas">
+      <label class="check-item"><input type="checkbox" id="fContaCC" value="CONTA_CORRENTE" checked onchange="atualizarTudo()"> C/C</label>
+      <label class="check-item"><input type="checkbox" id="fContaPP" value="POUPANCA" checked onchange="atualizarTudo()"> Poupança</label>
+      <label class="check-item"><input type="checkbox" id="fContaCX" value="CAIXA" checked onchange="atualizarTudo()"> Caixa</label>
+    </div>
   </div>
   <div class="filtro-grupo">
     <label>Tipo</label>
@@ -135,6 +153,7 @@
   <button class="btn btn-secundario" onclick="exportarFiltrado()">↓ Exportar visão atual (CSV)</button>
 </div>
 
+<div class="cards-contas" id="cardsSaldos"></div>
 <div class="cards" id="cardsResumo"></div>
 
 <div class="graficos">
@@ -269,15 +288,53 @@ function atualizarCategoriasModal() {
   }
 }
 
+function getContasSelecionadas() {
+  const sel = [];
+  [["fContaCC","CONTA_CORRENTE"],["fContaPP","POUPANCA"],["fContaCX","CAIXA"]].forEach(([id,val]) => {
+    if (document.getElementById(id).checked) sel.push(val);
+  });
+  return sel; // vazio = todas desmarcadas (mostra nada), mas tratamos como "todas" se todas marcadas
+}
+
+function getSaldoAtual(conta) {
+  const todos = (conta === "CAIXA" ? [...CAIXA] : [...DADOS])
+    .filter(r => r.conta === conta)
+    .map(r => ({ ...r, valor: parseFloat(r.valor), saldo: parseFloat(r.saldo||0) }));
+  if (!todos.length) return null;
+  if (conta === "CAIXA") return todos.reduce((s, r) => s + r.valor, 0);
+  const sorted = [...todos].sort((a, b) => a.data.localeCompare(b.data));
+  return sorted[sorted.length - 1].saldo;
+}
+
+function renderSaldosContas() {
+  const contas = [
+    { id: "CONTA_CORRENTE", label: "Saldo Conta Corrente", cls: "cc", sub: "C/C 000577546739-2" },
+    { id: "POUPANCA",       label: "Saldo Poupança",       cls: "pp", sub: "Poupança 000738979335-0" },
+    { id: "CAIXA",          label: "Saldo Caixa",          cls: "cx", sub: "Dinheiro físico" },
+  ];
+  const html = contas.map(c => {
+    const saldo = getSaldoAtual(c.id);
+    const valorHtml = saldo === null
+      ? '<span style="color:var(--muted);font-size:14px">Sem dados</span>'
+      : `<div class="valor-conta">${fmt(saldo)}</div>`;
+    const extra = saldo !== null ? (saldo >= 0 ? "positivo" : "negativo") : "";
+    return `<div class="card-conta ${c.cls} ${extra}">
+      <h3>${c.label}</h3>${valorHtml}
+      <small>${c.sub}</small>
+    </div>`;
+  }).join("");
+  document.getElementById("cardsSaldos").innerHTML = html;
+}
+
 function aplicarFiltros(lista) {
-  const conta = document.getElementById("fConta").value;
-  const tipo = document.getElementById("fTipo").value;
-  const cat = document.getElementById("fCategoria").value;
-  const ini = document.getElementById("fMesIni").value;
-  const fim = document.getElementById("fMesFim").value;
+  const contas = getContasSelecionadas();
+  const tipo  = document.getElementById("fTipo").value;
+  const cat   = document.getElementById("fCategoria").value;
+  const ini   = document.getElementById("fMesIni").value;
+  const fim   = document.getElementById("fMesFim").value;
   const busca = document.getElementById("fBusca").value.toLowerCase().trim();
   return lista.filter(r => {
-    if (conta && r.conta !== conta) return false;
+    if (contas.length && !contas.includes(r.conta)) return false;
     if (tipo && r.tipo !== tipo) return false;
     if (cat && r.categoria !== cat) return false;
     if (ini && r.data.slice(0,7) < ini) return false;
@@ -435,6 +492,7 @@ function renderGraficos(lista) {
 }
 
 function atualizarTudo() {
+  renderSaldosContas();
   const lista = aplicarFiltros(todosLancamentos());
   renderCards(lista);
   renderTabela(lista);
@@ -530,7 +588,10 @@ function baixarArquivo(nome, conteudo, tipo) {
 }
 
 function limparFiltros() {
-  ["fConta","fTipo","fCategoria","fMesIni","fMesFim","fBusca"].forEach(id => {
+  ["fContaCC","fContaPP","fContaCX"].forEach(id => {
+    document.getElementById(id).checked = true;
+  });
+  ["fTipo","fCategoria","fMesIni","fMesFim","fBusca"].forEach(id => {
     document.getElementById(id).value = "";
   });
   atualizarTudo();
@@ -538,7 +599,7 @@ function limparFiltros() {
 
 // Inicializar
 popularCategorias();
-["fVisao","fConta","fTipo","fCategoria","fMesIni","fMesFim","fBusca"].forEach(id => {
+["fVisao","fTipo","fCategoria","fMesIni","fMesFim","fBusca"].forEach(id => {
   document.getElementById(id).addEventListener("change", atualizarTudo);
   document.getElementById(id).addEventListener("input", atualizarTudo);
 });
