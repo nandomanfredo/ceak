@@ -325,13 +325,15 @@ function renderSaldosContas() {
     </div>`;
   }).join("");
 
-  // Total de receitas de todas as origens (sem filtro)
-  const todos = todosLancamentos();
-  const totalReceita = todos.filter(r => r.valor > 0).reduce((s, r) => s + r.valor, 0);
+  // Soma dos saldos atuais das 3 contas
+  const sCC  = getSaldoAtual("CONTA_CORRENTE") || 0;
+  const sPP  = getSaldoAtual("POUPANCA")       || 0;
+  const sCX  = getSaldoAtual("CAIXA")          || 0;
+  const totalSaldos = sCC + sPP + sCX;
   const htmlReceita = `<div class="card-conta" style="border-left-color:#7B5EA7">
-    <h3>Total Receitas (todas as contas)</h3>
-    <div class="valor-conta" style="color:#7B5EA7">${fmt(totalReceita)}</div>
-    <small>${todos.filter(r => r.valor > 0).length} lançamentos</small>
+    <h3>Saldo Total (C/C + Poupança + Caixa)</h3>
+    <div class="valor-conta" style="color:#7B5EA7">${fmt(totalSaldos)}</div>
+    <small>Soma dos três saldos atuais</small>
   </div>`;
 
   document.getElementById("cardsSaldos").innerHTML = htmlContas + htmlReceita;
