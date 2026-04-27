@@ -72,9 +72,11 @@
   .check-item:has(input:checked){background:var(--azul);color:#fff;border-color:var(--azul)}
   .check-item:has(input:checked) input{accent-color:#fff}
   /* Cards de saldo atual por conta */
-  .cards-contas{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
-  @media(max-width:700px){.cards-contas{grid-template-columns:1fr 1fr}}
+  .cards-contas{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  @media(max-width:900px){.cards-contas{grid-template-columns:1fr 1fr}}
   @media(max-width:450px){.cards-contas{grid-template-columns:1fr}}
+  .btn-mini{background:none;border:none;cursor:pointer;padding:3px 6px;font-size:13px;border-radius:4px;line-height:1}
+  .btn-mini:hover{background:rgba(0,0,0,.1)}
   .card-conta{background:var(--card);padding:14px 16px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05);border-left:4px solid var(--borda)}
   .card-conta h3{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px}
   .card-conta .valor-conta{font-size:21px;font-weight:700;color:var(--texto)}
@@ -186,6 +188,7 @@
         <th>Data</th><th>Conta</th><th>Tipo</th><th>Categoria</th>
         <th>Histórico</th><th>Contraparte</th>
         <th style="text-align:right">Entrada</th><th style="text-align:right">Saída</th>
+        <th style="text-align:center">Ações</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -243,11 +246,9 @@ let DADOS = window.DADOS_BANCARIOS || [];
 let CAIXA = JSON.parse(localStorage.getItem("seak_caixa") || "[]");
 
 function todosLancamentos() {
-  return [...DADOS, ...CAIXA].map(r => ({
-    ...r,
-    valor: parseFloat(r.valor),
-    valor_abs: parseFloat(r.valor_abs || Math.abs(r.valor))
-  }));
+  const dados  = DADOS.map(r => ({ ...r, valor: parseFloat(r.valor), valor_abs: parseFloat(r.valor_abs || Math.abs(r.valor)), _caixaIdx: -1 }));
+  const caixa  = CAIXA.map((r, i) => ({ ...r, valor: parseFloat(r.valor), valor_abs: parseFloat(r.valor_abs || Math.abs(r.valor)), _caixaIdx: i }));
+  return [...dados, ...caixa];
 }
 
 // === INICIALIZAÇÃO ===
@@ -312,7 +313,7 @@ function renderSaldosContas() {
     { id: "POUPANCA",       label: "Saldo Poupança",       cls: "pp", sub: "Poupança 000738979335-0" },
     { id: "CAIXA",          label: "Saldo Caixa",          cls: "cx", sub: "Dinheiro físico" },
   ];
-  const html = contas.map(c => {
+  const htmlContas = contas.map(c => {
     const saldo = getSaldoAtual(c.id);
     const valorHtml = saldo === null
       ? '<span style="color:var(--muted);font-size:14px">Sem dados</span>'
@@ -323,7 +324,17 @@ function renderSaldosContas() {
       <small>${c.sub}</small>
     </div>`;
   }).join("");
-  document.getElementById("cardsSaldos").innerHTML = html;
+
+  // Total de receitas de todas as origens (sem filtro)
+  const todos = todosLancamentos();
+  const totalReceita = todos.filter(r => r.valor > 0).reduce((s, r) => s + r.valor, 0);
+  const htmlReceita = `<div class="card-conta" style="border-left-color:#7B5EA7">
+    <h3>Total Receitas (todas as contas)</h3>
+    <div class="valor-conta" style="color:#7B5EA7">${fmt(totalReceita)}</div>
+    <small>${todos.filter(r => r.valor > 0).length} lançamentos</small>
+  </div>`;
+
+  document.getElementById("cardsSaldos").innerHTML = htmlContas + htmlReceita;
 }
 
 function aplicarFiltros(lista) {
@@ -376,7 +387,13 @@ function renderTabela(lista) {
       const tagC = r.conta === "CONTA_CORRENTE" ? "tag-cc" : (r.conta === "POUPANCA" ? "tag-poup" : "tag-caixa");
       const nomeC = r.conta === "CONTA_CORRENTE" ? "C/C" : (r.conta === "POUPANCA" ? "POUP" : "CAIXA");
       const entrada = r.valor > 0 ? fmt(r.valor) : "";
-      const saida = r.valor < 0 ? fmt(Math.abs(r.valor)) : "";
+      const saida   = r.valor < 0 ? fmt(Math.abs(r.valor)) : "";
+      const acoes   = r._caixaIdx >= 0
+        ? `<td style="white-space:nowrap">
+            <button class="btn-mini" title="Editar" onclick="abrirModalCaixa(${r._caixaIdx})">✏️</button>
+            <button class="btn-mini" title="Excluir" onclick="excluirCaixa(${r._caixaIdx})">🗑️</button>
+           </td>`
+        : `<td></td>`;
       return `<tr class="${classe}">
         <td>${fmtData(r.data)}</td>
         <td><span class="tag ${tagC}">${nomeC}</span></td>
@@ -386,6 +403,7 @@ function renderTabela(lista) {
         <td>${(r.nome||'').slice(0,30)}</td>
         <td class="valor-positivo">${entrada}</td>
         <td class="valor-negativo">${saida}</td>
+        ${acoes}
       </tr>`;
     }).join("");
     tb.innerHTML = rows || '<tr><td colspan="8" style="text-align:center;color:#999;padding:20px">Nenhum lançamento encontrado.</td></tr>';
@@ -515,39 +533,67 @@ function atualizarTudo() {
 }
 
 // === CAIXA (manual) ===
-function abrirModalCaixa() {
+let _editIdx = -1;
+
+function abrirModalCaixa(editIdx = -1) {
+  _editIdx = editIdx;
+  const titulo = document.querySelector("#modalCaixa h2");
+  if (editIdx >= 0) {
+    const r = CAIXA[editIdx];
+    titulo.textContent = "Editar Lançamento de Caixa";
+    document.getElementById("cData").value      = r.data;
+    document.getElementById("cTipo").value      = r.tipo;
+    atualizarCategoriasModal();
+    document.getElementById("cCategoria").value = r.categoria;
+    document.getElementById("cHistorico").value = r.historico;
+    document.getElementById("cNome").value      = r.nome || "";
+    document.getElementById("cValor").value     = Math.abs(parseFloat(r.valor));
+  } else {
+    titulo.textContent = "Novo Lançamento de Caixa (dinheiro)";
+    document.getElementById("formCaixa").reset();
+    document.getElementById("cData").valueAsDate = new Date();
+  }
   document.getElementById("modalCaixa").classList.add("ativo");
-  document.getElementById("cData").valueAsDate = new Date();
 }
+
 function fecharModal() {
   document.getElementById("modalCaixa").classList.remove("ativo");
   document.getElementById("formCaixa").reset();
+  _editIdx = -1;
 }
+
 function salvarCaixa(e) {
   e.preventDefault();
   const valorAbs = parseFloat(document.getElementById("cValor").value);
-  const tipo = document.getElementById("cTipo").value;
-  const valor = tipo === "RECEITA" ? valorAbs : -valorAbs;
+  const tipo     = document.getElementById("cTipo").value;
+  const valor    = tipo === "RECEITA" ? valorAbs : -valorAbs;
+  const dataVal  = document.getElementById("cData").value;
   const reg = {
-    data: document.getElementById("cData").value,
-    mes: document.getElementById("cData").value.slice(0,7),
-    conta: "CAIXA",
-    origem: "CAIXA",
+    data: dataVal, mes: dataVal.slice(0,7),
+    conta: "CAIXA", origem: "CAIXA",
     tipo: tipo,
-    categoria: document.getElementById("cCategoria").value,
+    categoria:    document.getElementById("cCategoria").value,
     subcategoria: "",
-    historico: document.getElementById("cHistorico").value,
-    nome: document.getElementById("cNome").value || "",
+    historico:    document.getElementById("cHistorico").value,
+    nome:         document.getElementById("cNome").value || "",
     documento: "",
-    valor_abs: valorAbs,
-    valor: valor,
-    saldo: 0
+    valor_abs: valorAbs, valor: valor, saldo: 0
   };
-  CAIXA.push(reg);
+  if (_editIdx >= 0) {
+    CAIXA[_editIdx] = reg;
+  } else {
+    CAIXA.push(reg);
+  }
   localStorage.setItem("seak_caixa", JSON.stringify(CAIXA));
   fecharModal();
   atualizarTudo();
-  alert("Lançamento de caixa salvo!");
+}
+
+function excluirCaixa(idx) {
+  if (!confirm("Excluir este lançamento de caixa?")) return;
+  CAIXA.splice(idx, 1);
+  localStorage.setItem("seak_caixa", JSON.stringify(CAIXA));
+  atualizarTudo();
 }
 
 function exportarCaixa() {
