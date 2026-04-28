@@ -159,6 +159,7 @@
   <button class="btn btn-secundario" onclick="document.getElementById('importar').click()">↑ Importar caixa (CSV)</button>
   <input type="file" id="importar" accept=".csv" style="display:none" onchange="importarCaixa(event)">
   <button class="btn btn-secundario" onclick="exportarFiltrado()">↓ Exportar visão atual (CSV)</button>
+  <button class="btn btn-primario"   onclick="imprimirLivroCaixa()" title="Imprime os lançamentos do período filtrado em formato de Livro Caixa">🖨️ Imprimir Livro Caixa</button>
 </div>
 
 <div class="cards-contas" id="cardsSaldos"></div>
@@ -802,6 +803,121 @@ function limparFiltros() {
     document.getElementById(id).value = "";
   });
   atualizarTudo();
+}
+
+// === IMPRIMIR LIVRO CAIXA ===
+function imprimirLivroCaixa() {
+  const lista = aplicarFiltros(todosLancamentos()).sort((a, b) => a.data.localeCompare(b.data));
+  if (!lista.length) { alert("Nenhum lançamento no período filtrado."); return; }
+
+  const ini = document.getElementById("fMesIni").value;
+  const fim = document.getElementById("fMesFim").value;
+  const nomMes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  function fmtMes(ym) {
+    if (!ym) return null;
+    const [y, m] = ym.split("-");
+    return nomMes[parseInt(m) - 1] + "/" + y;
+  }
+  const periodoTxt = (ini || fim)
+    ? `${ini ? fmtMes(ini) : "início"} a ${fim ? fmtMes(fim) : "atual"}`
+    : "Todos os períodos";
+
+  // Monta linhas e acumula totais
+  let totalEntradas = 0, totalSaidas = 0;
+  const contaNome = c => c === "CONTA_CORRENTE" ? "C/C" : c === "POUPANCA" ? "Poupança" : "Caixa";
+  const cor = v => v > 0 ? "#1a6b35" : "#8b1a1a";
+
+  const linhas = lista.map((r, i) => {
+    const ent = r.valor > 0 ? r.valor : 0;
+    const sai = r.valor < 0 ? Math.abs(r.valor) : 0;
+    totalEntradas += ent;
+    totalSaidas   += sai;
+    const bg = i % 2 === 0 ? "#fff" : "#F5F7FB";
+    return `<tr style="background:${bg}">
+      <td>${fmtData(r.data)}</td>
+      <td>${(r.historico || "").slice(0, 65)}</td>
+      <td>${r.categoria || "—"}</td>
+      <td>${contaNome(r.conta)}</td>
+      <td style="text-align:right;color:#1a6b35;font-weight:600">${ent > 0 ? fmt(ent) : ""}</td>
+      <td style="text-align:right;color:#8b1a1a;font-weight:600">${sai > 0 ? fmt(sai) : ""}</td>
+    </tr>`;
+  }).join("");
+
+  const saldoPeriodo = totalEntradas - totalSaidas;
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Livro Caixa — SEAK</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#000}
+  body{padding:18mm 14mm 14mm}
+  .cab{text-align:center;border-bottom:2.5px solid #1A2F4D;padding-bottom:10px;margin-bottom:14px}
+  .cab h1{font-size:15pt;color:#1A2F4D;letter-spacing:0.3px}
+  .cab h2{font-size:12pt;font-weight:400;margin-top:3px;color:#333}
+  .cab p{font-size:9.5pt;color:#555;margin-top:5px}
+  table{width:100%;border-collapse:collapse;margin-top:4px}
+  thead th{background:#1A2F4D;color:#fff;padding:6px 8px;text-align:left;font-size:10pt;font-weight:700}
+  td{padding:5px 8px;border-bottom:1px solid #DDE3EE;font-size:10pt;vertical-align:top}
+  .totais{display:flex;justify-content:flex-end;gap:32px;border-top:2.5px solid #1A2F4D;padding-top:10px;margin-top:14px}
+  .totais .bloco{text-align:right}
+  .totais .rot{font-size:9pt;color:#555;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.4px}
+  .totais .val{font-size:14pt;font-weight:700}
+  .rodape{margin-top:18px;padding-top:7px;border-top:1px solid #ccc;display:flex;justify-content:space-between;font-size:9pt;color:#777}
+  @media print{
+    @page{margin:15mm 12mm}
+    body{padding:0}
+    .totais{page-break-inside:avoid}
+    .rodape{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="cab">
+  <h1>Sociedade Espírita Allan Kardec</h1>
+  <h2>Livro Caixa — Relatório Financeiro</h2>
+  <p>CNPJ 02.456.471/0001-34 &nbsp;|&nbsp; Período: <strong>${periodoTxt}</strong> &nbsp;|&nbsp; ${lista.length} lançamentos</p>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th style="width:80px">Data</th>
+      <th>Histórico</th>
+      <th style="width:140px">Categoria</th>
+      <th style="width:72px">Conta</th>
+      <th style="width:110px;text-align:right">Entrada (R$)</th>
+      <th style="width:110px;text-align:right">Saída (R$)</th>
+    </tr>
+  </thead>
+  <tbody>${linhas}</tbody>
+</table>
+<div class="totais">
+  <div class="bloco">
+    <div class="rot">Total Entradas</div>
+    <div class="val" style="color:#1a6b35">${fmt(totalEntradas)}</div>
+  </div>
+  <div class="bloco">
+    <div class="rot">Total Saídas</div>
+    <div class="val" style="color:#8b1a1a">${fmt(totalSaidas)}</div>
+  </div>
+  <div class="bloco">
+    <div class="rot">Saldo do Período</div>
+    <div class="val" style="color:${saldoPeriodo >= 0 ? '#1a6b35' : '#8b1a1a'}">${fmt(saldoPeriodo)}</div>
+  </div>
+</div>
+<div class="rodape">
+  <span>Gerado em ${new Date().toLocaleString("pt-BR")}</span>
+  <span>nandomanfredo.github.io/ceak</span>
+</div>
+<script>window.onload = () => window.print();<\/script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=1000,height=750");
+  win.document.write(html);
+  win.document.close();
 }
 
 // Inicializar
