@@ -77,6 +77,12 @@
   @media(max-width:450px){.cards-contas{grid-template-columns:1fr}}
   .btn-mini{background:none;border:none;cursor:pointer;padding:3px 6px;font-size:13px;border-radius:4px;line-height:1}
   .btn-mini:hover{background:rgba(0,0,0,.1)}
+  .grafico-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px}
+  .grafico-header h2{margin-bottom:0;border-bottom:none;padding-bottom:0}
+  .btn-grupo{display:flex;gap:2px}
+  .btn-grafico{padding:3px 10px;border:1px solid var(--borda);border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;background:#fff;color:var(--muted);transition:all .15s}
+  .btn-grafico.ativo{background:var(--azul2);color:#fff;border-color:var(--azul2)}
+  .btn-grafico:hover:not(.ativo){background:#E6EEF7}
   .card-conta{background:var(--card);padding:14px 16px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05);border-left:4px solid var(--borda)}
   .card-conta h3{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px}
   .card-conta .valor-conta{font-size:21px;font-weight:700;color:var(--texto)}
@@ -164,7 +170,20 @@
     <canvas id="graficoEvolucao"></canvas>
   </div>
   <div class="grafico-box">
-    <h2 id="tituloDespesas">Despesas por Categoria — 2026</h2>
+    <div class="grafico-header">
+      <h2 id="tituloDespesas">Despesas por Categoria — 2026</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <div class="btn-grupo">
+          <button class="btn-grafico ativo" id="btnDespMes" onclick="setDespPeriodo('mes')">Mês atual</button>
+          <button class="btn-grafico"       id="btnDespAno" onclick="setDespPeriodo('ano')">Ano corrente</button>
+        </div>
+        <div class="btn-grupo">
+          <button class="btn-grafico ativo" id="btnDespValor" onclick="setDespModo('valor')">R$</button>
+          <button class="btn-grafico"       id="btnDespPct"   onclick="setDespModo('pct')">%</button>
+          <button class="btn-grafico"       id="btnDespAmbos" onclick="setDespModo('ambos')">R$+%</button>
+        </div>
+      </div>
+    </div>
     <canvas id="graficoDespesas"></canvas>
   </div>
 </div>
@@ -435,6 +454,25 @@ function renderTabela(lista) {
   }
 }
 
+// === ESTADO — gráfico Despesas ===
+let _despPeriodo = 'mes';   // 'mes' | 'ano'
+let _despModo    = 'valor'; // 'valor' | 'pct' | 'ambos'
+
+function setDespPeriodo(p) {
+  _despPeriodo = p;
+  document.getElementById('btnDespMes').classList.toggle('ativo', p === 'mes');
+  document.getElementById('btnDespAno').classList.toggle('ativo', p === 'ano');
+  renderGraficos(aplicarFiltros(todosLancamentos()));
+}
+
+function setDespModo(m) {
+  _despModo = m;
+  document.getElementById('btnDespValor').classList.toggle('ativo', m === 'valor');
+  document.getElementById('btnDespPct').classList.toggle('ativo',   m === 'pct');
+  document.getElementById('btnDespAmbos').classList.toggle('ativo', m === 'ambos');
+  renderGraficos(aplicarFiltros(todosLancamentos()));
+}
+
 function renderGraficos(lista) {
   const anoCorrente = new Date().getFullYear().toString();
   const mesAtual    = new Date().toISOString().slice(0, 7);
@@ -442,7 +480,6 @@ function renderGraficos(lista) {
 
   // Atualiza títulos com o ano
   document.getElementById("tituloEvolucao").textContent = `Saldo por Conta — ${anoCorrente}`;
-  document.getElementById("tituloDespesas").textContent  = `Despesas por Categoria — ${anoCorrente}`;
 
   // Meses do ano corrente até o mês atual
   const meses = [];
@@ -492,18 +529,32 @@ function renderGraficos(lista) {
     }
   });
 
-  // === 2. Despesas por Categoria — ano corrente, com valor R$ no label ===
+  // === 2. Despesas por Categoria — período e modo configuráveis ===
+  const isMes = (_despPeriodo === 'mes');
+  const despTitulo = isMes
+    ? new Date().toLocaleDateString('pt-BR', {month:'long', year:'numeric'})
+    : anoCorrente;
+  document.getElementById("tituloDespesas").textContent = `Despesas por Categoria — ${despTitulo}`;
+
   const despCat = {};
   todosLanc
-    .filter(r => r.valor < 0 && r.data && r.data.startsWith(anoCorrente))
+    .filter(r => r.valor < 0 && r.data && (isMes ? r.data.slice(0,7) === mesAtual : r.data.startsWith(anoCorrente)))
     .forEach(r => { despCat[r.categoria] = (despCat[r.categoria] || 0) + Math.abs(r.valor); });
   const dC = Object.entries(despCat).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const totalDesp = dC.reduce((s, x) => s + x[1], 0);
+
+  const labelsDesp = dC.map(([cat, val]) => {
+    const pct = totalDesp ? (val / totalDesp * 100).toFixed(1) + '%' : '0%';
+    if (_despModo === 'valor') return `${cat}  •  ${fmt(val)}`;
+    if (_despModo === 'pct')   return `${cat}  •  ${pct}`;
+    return `${cat}  •  ${fmt(val)}  (${pct})`;
+  });
 
   if (graficos.despesas) graficos.despesas.destroy();
   graficos.despesas = new Chart(document.getElementById("graficoDespesas"), {
     type: "doughnut",
     data: {
-      labels: dC.map(([cat, val]) => `${cat}  •  ${fmt(val)}`),
+      labels: labelsDesp,
       datasets: [{ data: dC.map(x => x[1]),
         backgroundColor: ["#B53D3D","#D66653","#E8996B","#F0BD7E","#8C5F7F","#5F8CA8","#7FB069","#A6A8B8","#C79A9A","#8491A3"],
         borderWidth: 2, borderColor: "#fff"
@@ -512,7 +563,11 @@ function renderGraficos(lista) {
     options: {
       plugins: {
         legend: { position: "right", labels: { boxWidth: 12, padding: 8, font: { size: 11 } } },
-        tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.parsed)}` } }
+        tooltip: { callbacks: { label: ctx => {
+          const val = ctx.parsed;
+          const pct = totalDesp ? (val / totalDesp * 100).toFixed(1) : '0';
+          return ` ${fmt(val)}  (${pct}%)`;
+        }}}
       },
       cutout: "42%"
     }
@@ -705,3 +760,4 @@ atualizarTudo();
 
 </body>
 </html>
+
