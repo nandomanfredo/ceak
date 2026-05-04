@@ -166,6 +166,11 @@
 <div class="cards-contas" id="cardsSaldos"></div>
 <div class="cards" id="cardsResumo"></div>
 
+<div class="grafico-box" style="margin-bottom:16px">
+  <h2>Receita × Despesa — Últimos 6 Meses (todas as contas)</h2>
+  <canvas id="graficoBarrasMensal" style="max-height:240px"></canvas>
+</div>
+
 <div class="graficos">
   <div class="grafico-box">
     <h2 id="tituloEvolucao">Saldo por Conta — 2026</h2>
@@ -560,6 +565,71 @@ function renderGraficos(lista) {
         tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y || 0)}` } }
       },
       scales: { y: { ticks: { callback: v => "R$ " + Number(v).toLocaleString("pt-BR") } } }
+    }
+  });
+
+  // === 1b. Receita × Despesa — Últimos 6 meses (barras empilhadas por conta) ===
+  const mesesSignifB = [...new Set(
+    todosLanc.filter(r => r.data).map(r => r.data.slice(0, 7))
+  )].sort().filter(m =>
+    todosLanc.filter(r => r.data && r.data.startsWith(m))
+             .reduce((s, r) => s + Math.abs(r.valor), 0) > 10
+  ).slice(-6);
+
+  const labsB = mesesSignifB.map(m => nomMes[parseInt(m.slice(5)) - 1] + "/" + m.slice(2, 4));
+
+  const cfgB = [
+    { id: "CONTA_CORRENTE", label: "C/C",      corR: "#2E4A78", corD: "#6B8EC7" },
+    { id: "POUPANCA",       label: "Poupança", corR: "#2E8B57", corD: "#6DC49A" },
+    { id: "CAIXA",          label: "Caixa",    corR: "#B7860B", corD: "#E0B75A" },
+  ];
+
+  const datasetsB = [
+    ...cfgB.map(c => ({
+      label: `${c.label} Receita`,
+      stack: "rec",
+      data: mesesSignifB.map(m =>
+        todosLanc.filter(r => r.conta === c.id && r.valor > 0 && r.data && r.data.startsWith(m))
+                 .reduce((s, r) => s + r.valor, 0)
+      ),
+      backgroundColor: c.corR + "CC",
+      borderColor:     c.corR,
+      borderWidth: 1, borderRadius: 3,
+    })),
+    ...cfgB.map(c => ({
+      label: `${c.label} Despesa`,
+      stack: "des",
+      data: mesesSignifB.map(m =>
+        todosLanc.filter(r => r.conta === c.id && r.valor < 0 && r.data && r.data.startsWith(m))
+                 .reduce((s, r) => s + Math.abs(r.valor), 0)
+      ),
+      backgroundColor: c.corD + "CC",
+      borderColor:     c.corD,
+      borderWidth: 1, borderRadius: 3,
+    })),
+  ];
+
+  if (graficos.barrasMensal) graficos.barrasMensal.destroy();
+  graficos.barrasMensal = new Chart(document.getElementById("graficoBarrasMensal"), {
+    type: "bar",
+    data: { labels: labsB, datasets: datasetsB },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: "bottom", labels: { boxWidth: 12, padding: 10, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y || 0)}`
+          }
+        }
+      },
+      scales: {
+        x: { stacked: false },
+        y: {
+          stacked: false,
+          ticks: { callback: v => "R$ " + Number(v).toLocaleString("pt-BR") }
+        }
+      }
     }
   });
 
