@@ -160,6 +160,7 @@
   <input type="file" id="importar" accept=".csv" style="display:none" onchange="importarCaixa(event)">
   <button class="btn btn-secundario" onclick="exportarFiltrado()">↓ Exportar visão atual (CSV)</button>
   <button class="btn btn-primario"   onclick="imprimirLivroCaixa()" title="Imprime os lançamentos do período filtrado em formato de Livro Caixa">🖨️ Imprimir Livro Caixa</button>
+  <button class="btn btn-secundario" onclick="gerarRelatorioFinanceiro()" title="Relatório Receita × Despesa com análise e projeção">📊 Relatório Receita × Despesa</button>
 </div>
 
 <div class="cards-contas" id="cardsSaldos"></div>
@@ -803,6 +804,335 @@ function limparFiltros() {
     document.getElementById(id).value = "";
   });
   atualizarTudo();
+}
+
+// === RELATÓRIO RECEITA × DESPESA ===
+function gerarRelatorioFinanceiro() {
+  const todosLanc = todosLancamentos();
+  const hoje      = new Date();
+  const nomMesPt  = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                     "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+  // ── 1. Detecta os últimos 6 meses com movimentação significativa ──────────
+  const mesesComDados = new Set(
+    todosLanc
+      .filter(r => r.conta === "CONTA_CORRENTE" || r.conta === "POUPANCA")
+      .map(r => r.data ? r.data.slice(0, 7) : null).filter(Boolean)
+  );
+  const mesesSignif = [...mesesComDados].sort().filter(m => {
+    const tot = todosLanc
+      .filter(r => (r.conta==="CONTA_CORRENTE"||r.conta==="POUPANCA") && r.data && r.data.startsWith(m))
+      .reduce((s, r) => s + Math.abs(r.valor), 0);
+    return tot > 10;
+  });
+  const meses6 = mesesSignif.slice(-6);
+  if (!meses6.length) { alert("Dados insuficientes para gerar o relatório."); return; }
+
+  // ── 2. Calcula receita / despesa / saldo por conta por mês ────────────────
+  function calcMes(m, conta) {
+    const sub = todosLanc.filter(r => r.conta === conta && r.data && r.data.startsWith(m));
+    const rec = sub.filter(r => r.valor > 0).reduce((s, r) => s + r.valor, 0);
+    const des = sub.filter(r => r.valor < 0).reduce((s, r) => s + Math.abs(r.valor), 0);
+    return { rec, des, saldo: rec - des };
+  }
+  const dm = meses6.map(m => ({
+    mes: m,
+    lab: nomMesPt[parseInt(m.slice(5)) - 1] + "/" + m.slice(2, 4),
+    cc: calcMes(m, "CONTA_CORRENTE"),
+    pp: calcMes(m, "POUPANCA"),
+  }));
+
+  // ── 3. Totais e médias (usa últimos 3 meses como base de projeção) ─────────
+  const sum = (arr, fn) => arr.reduce((s, d) => s + fn(d), 0);
+  const totCC = { rec: sum(dm, d=>d.cc.rec), des: sum(dm, d=>d.cc.des), saldo: sum(dm, d=>d.cc.saldo) };
+  const totPP = { rec: sum(dm, d=>d.pp.rec), des: sum(dm, d=>d.pp.des), saldo: sum(dm, d=>d.pp.saldo) };
+
+  const ult3 = dm.slice(-3);
+  const mediaCC = sum(ult3, d => d.cc.saldo) / ult3.length;
+  const mediaPP = sum(ult3, d => d.pp.saldo) / ult3.length;
+
+  // ── 4. Saldos atuais das contas ───────────────────────────────────────────
+  const saldoAtualCC = getSaldoAtual("CONTA_CORRENTE") || 0;
+  const saldoAtualPP = getSaldoAtual("POUPANCA")       || 0;
+
+  // ── 5. Projeção: próximos 4 meses de saldo acumulado na conta ─────────────
+  const labProj = [0, 1, 2, 3].map(i => {
+    const d = new Date(hoje); d.setMonth(d.getMonth() + i);
+    return nomMesPt[d.getMonth()].slice(0, 3) + "/" + d.getFullYear().toString().slice(2);
+  });
+  const projCC = [0, 1, 2, 3].map(i => Math.round(saldoAtualCC + mediaCC * i));
+  const projPP = [0, 1, 2, 3].map(i => Math.round(saldoAtualPP + mediaPP * i));
+
+  function projDataTexto(mesesFuturos) {
+    const d = new Date(hoje); d.setMonth(d.getMonth() + mesesFuturos);
+    return nomMesPt[d.getMonth()] + "/" + d.getFullYear();
+  }
+  function mesesParaZerar(saldoAtual, media) {
+    if (media >= 0) return null;
+    return Math.ceil(-saldoAtual / media);
+  }
+  const mesesZerarCC = mesesParaZerar(saldoAtualCC, mediaCC);
+  const mesesZerarPP = mesesParaZerar(saldoAtualPP, mediaPP);
+
+  // ── 6. Tabela HTML ────────────────────────────────────────────────────────
+  const tabelaLinhas = dm.map((d, i) => {
+    const cCS = d.cc.saldo >= 0 ? "#1a6b35" : "#8b1a1a";
+    const cPS = d.pp.saldo >= 0 ? "#1a6b35" : "#8b1a1a";
+    const bg  = i % 2 === 0 ? "#fff" : "#F5F7FB";
+    return `<tr style="background:${bg}">
+      <td><strong>${d.lab}</strong></td>
+      <td style="text-align:right;color:#1a6b35">${fmt(d.cc.rec)}</td>
+      <td style="text-align:right;color:#8b1a1a">${fmt(d.cc.des)}</td>
+      <td style="text-align:right;color:${cCS};font-weight:700">${fmt(d.cc.saldo)}</td>
+      <td style="text-align:right;color:#1a6b35">${fmt(d.pp.rec)}</td>
+      <td style="text-align:right;color:#8b1a1a">${fmt(d.pp.des)}</td>
+      <td style="text-align:right;color:${cPS};font-weight:700">${fmt(d.pp.saldo)}</td>
+    </tr>`;
+  }).join("");
+
+  // ── 7. Análise textual ────────────────────────────────────────────────────
+  const mesesDefCC = dm.filter(d => d.cc.saldo < 0).length;
+  const mesesDefPP = dm.filter(d => d.pp.saldo < 0).length;
+
+  function analiseCC() {
+    let txt = `<h3 style="color:#2E4A78;margin:16px 0 8px">🔵 Conta Corrente</h3>`;
+    if (mesesDefCC === 0) {
+      txt += `<p>✅ A Conta Corrente apresentou <strong>superávit em todos os ${dm.length} meses</strong> analisados. Média mensal de resultado: <strong style="color:#1a6b35">${fmt(mediaCC)}</strong>.</p>`;
+    } else if (mesesDefCC >= dm.length - 1) {
+      txt += `<p>🚨 <strong>Alerta crítico:</strong> A Conta Corrente registrou <strong>déficit em ${mesesDefCC} dos ${dm.length} meses</strong> do período — as despesas superaram as receitas na maioria dos meses. A média mensal de resultado foi <strong style="color:#8b1a1a">${fmt(mediaCC)}</strong>.</p>`;
+    } else {
+      txt += `<p>⚠️ <strong>Atenção:</strong> A Conta Corrente apresentou déficit em <strong>${mesesDefCC} dos ${dm.length} meses</strong>. Média dos últimos 3 meses: <strong style="color:#8b1a1a">${fmt(mediaCC)}</strong>.</p>`;
+    }
+    const maxDes = Math.max(...dm.map(d => d.cc.des));
+    const maxDesMes = dm.find(d => d.cc.des === maxDes);
+    txt += `<p>O maior volume de despesas ocorreu em <strong>${maxDesMes ? maxDesMes.lab : "—"}</strong> (${fmt(maxDes)}). Total no período: receitas <strong style="color:#1a6b35">${fmt(totCC.rec)}</strong> × despesas <strong style="color:#8b1a1a">${fmt(totCC.des)}</strong> → resultado acumulado <strong style="color:${totCC.saldo>=0?"#1a6b35":"#8b1a1a"}">${fmt(totCC.saldo)}</strong>.</p>`;
+    if (mesesZerarCC !== null && mesesZerarCC <= 36) {
+      txt += `<p>🔴 <strong>Projeção:</strong> com o fluxo médio atual de <strong style="color:#8b1a1a">${fmt(mediaCC)}/mês</strong> e saldo atual de <strong>${fmt(saldoAtualCC)}</strong>, a Conta Corrente pode se esgotar em aproximadamente <strong>${mesesZerarCC} ${mesesZerarCC===1?"mês":"meses"}</strong> — estimativa: <strong>${projDataTexto(mesesZerarCC)}</strong>. Recomenda-se elevar as receitas ou reduzir despesas fixas com urgência.</p>`;
+    } else if (mesesZerarCC === null) {
+      txt += `<p>✅ <strong>Projeção:</strong> com fluxo médio positivo de <strong style="color:#1a6b35">${fmt(mediaCC)}/mês</strong>, a Conta Corrente tende a crescer nos próximos meses.</p>`;
+    }
+    return txt;
+  }
+
+  function analisePP() {
+    let txt = `<h3 style="color:#2E8B57;margin:16px 0 8px">🟢 Conta Poupança</h3>`;
+    if (mesesDefPP === 0) {
+      txt += `<p>✅ A Poupança manteve <strong>superávit em todos os meses</strong> analisados, com receitas (principalmente rendimentos) sempre superiores às despesas. Média mensal de superávit: <strong style="color:#1a6b35">${fmt(mediaPP)}</strong>.</p>`;
+    } else {
+      txt += `<p>⚠️ A Poupança apresentou déficit em ${mesesDefPP} meses. Média mensal: <strong style="color:${mediaPP>=0?"#1a6b35":"#8b1a1a"}">${fmt(mediaPP)}</strong>.</p>`;
+    }
+    txt += `<p>Total no período: receitas <strong style="color:#1a6b35">${fmt(totPP.rec)}</strong> × despesas <strong style="color:#8b1a1a">${fmt(totPP.des)}</strong> → resultado acumulado <strong style="color:${totPP.saldo>=0?"#1a6b35":"#8b1a1a"}">${fmt(totPP.saldo)}</strong>.</p>`;
+    if (mesesZerarPP !== null && mesesZerarPP <= 36) {
+      txt += `<p>⚠️ <strong>Projeção:</strong> a Poupança pode se esgotar em <strong>${mesesZerarPP} meses</strong> (${projDataTexto(mesesZerarPP)}).</p>`;
+    } else {
+      txt += `<p>✅ <strong>Projeção:</strong> com fluxo médio de <strong style="color:#1a6b35">${fmt(mediaPP)}/mês</strong>, a Poupança tende a manter saldo saudável. Ela pode também funcionar como reserva de emergência para cobrir os déficits da Conta Corrente.</p>`;
+    }
+    return txt;
+  }
+
+  function recomendacoes() {
+    let txt = `<h3 style="color:#1A2F4D;margin:16px 0 8px">📋 Recomendações</h3><ul style="padding-left:20px;line-height:1.9">`;
+    if (mediaCC < 0) {
+      txt += `<li>Fortalecer campanhas periódicas de arrecadação e doações para elevar as receitas mensais da Conta Corrente.</li>`;
+      txt += `<li>Avaliar possibilidade de implantar contribuição mensal regular dos associados/frequentadores.</li>`;
+      txt += `<li>Revisar despesas fixas (tarifas bancárias, serviços) e identificar reduções possíveis.</li>`;
+    }
+    if (mediaPP > 200) {
+      txt += `<li>A Poupança está saudável. Manter um fundo de reserva equivalente a pelo menos 3 meses de despesas da C/C (${fmt(Math.abs(mediaCC * 3))}) antes de qualquer retirada.</li>`;
+    }
+    txt += `<li>Monitorar mensalmente a relação receita/despesa e comparar com este relatório para detectar desvios precocemente.</li>`;
+    txt += `</ul>`;
+    return txt;
+  }
+
+  // ── 8. Serializa dados para Chart.js embutido no HTML ─────────────────────
+  const labs    = JSON.stringify(dm.map(d => d.lab));
+  const recCC_j = JSON.stringify(dm.map(d => +d.cc.rec.toFixed(2)));
+  const desCC_j = JSON.stringify(dm.map(d => +d.cc.des.toFixed(2)));
+  const recPP_j = JSON.stringify(dm.map(d => +d.pp.rec.toFixed(2)));
+  const desPP_j = JSON.stringify(dm.map(d => +d.pp.des.toFixed(2)));
+  const sCC_j   = JSON.stringify(dm.map(d => +d.cc.saldo.toFixed(2)));
+  const sPP_j   = JSON.stringify(dm.map(d => +d.pp.saldo.toFixed(2)));
+  const labPj   = JSON.stringify(labProj);
+  const pCC_j   = JSON.stringify(projCC);
+  const pPP_j   = JSON.stringify(projPP);
+  const n6      = dm.length;
+  const corTCC  = totCC.saldo >= 0 ? "#1a6b35" : "#8b1a1a";
+  const corTPP  = totPP.saldo >= 0 ? "#1a6b35" : "#8b1a1a";
+  const periLab = `${dm[0].lab} a ${dm[dm.length-1].lab}`;
+  const agora   = new Date().toLocaleString("pt-BR");
+
+  // ── 9. HTML do relatório ──────────────────────────────────────────────────
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório Financeiro — SEAK</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#1F2733}
+  body{background:#F5F7FB;padding:18px}
+  .cab{background:linear-gradient(135deg,#1A2F4D,#2E4A78);color:#fff;padding:22px 28px;border-radius:10px;margin-bottom:16px}
+  .cab h1{font-size:17pt;margin-bottom:4px} .cab p{font-size:9.5pt;opacity:.8;margin-top:3px}
+  .sec{background:#fff;border-radius:10px;padding:18px 22px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+  .sec h2{font-size:13pt;color:#1A2F4D;border-bottom:2px solid #1A2F4D;padding-bottom:6px;margin-bottom:14px}
+  .sec p{font-size:10.5pt;line-height:1.7;margin-bottom:8px;color:#333}
+  .sec ul{padding-left:18px;font-size:10.5pt;line-height:1.9;color:#333}
+  .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{padding:13px 15px;border-radius:8px;border-left:4px solid #ccc}
+  .card.cc{border-left-color:#2E4A78;background:#EEF3FA}
+  .card.pp{border-left-color:#2E8B57;background:#EEF7F1}
+  .card.al{border-left-color:#B53D3D;background:#FDF0F0}
+  .card.to{border-left-color:#7B5EA7;background:#F3EFF9}
+  .card h4{font-size:8.5pt;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+  .card .v{font-size:17pt;font-weight:700}
+  .card .v.p{color:#1a6b35} .card .v.n{color:#8b1a1a} .card .v.b{color:#2E4A78}
+  .card small{font-size:9pt;color:#888;margin-top:2px;display:block}
+  canvas{max-height:270px}
+  table{width:100%;border-collapse:collapse;font-size:10pt}
+  thead th{background:#2E4A78;color:#fff;padding:7px 10px;text-align:left}
+  th.r,td.r{text-align:right}
+  td{padding:6px 10px;border-bottom:1px solid #DDE3EE}
+  tfoot td{font-weight:700;background:#EEF3FA;border-top:2px solid #2E4A78}
+  .bar{display:flex;gap:10px;justify-content:flex-end;margin-bottom:14px;flex-wrap:wrap}
+  .btn{padding:7px 15px;border:none;border-radius:6px;cursor:pointer;font-size:10.5pt;font-weight:600}
+  .bp{background:#1A2F4D;color:#fff} .bs{background:#E6EEF7;color:#1A2F4D}
+  .rodape{text-align:center;font-size:8.5pt;color:#999;margin-top:12px;padding-top:8px;border-top:1px solid #ddd}
+  @media print{
+    @page{margin:12mm} body{background:#fff;padding:0} .bar{display:none}
+    .cab,.card,.sec,.g2 canvas{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .sec{box-shadow:none;border:1px solid #ddd;page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button class="btn bp" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+  <button class="btn bs" onclick="window.close()">✕ Fechar</button>
+</div>
+
+<div class="cab">
+  <h1>📊 Relatório Financeiro — Sociedade Espírita Allan Kardec</h1>
+  <p>CNPJ 02.456.471/0001-34 &nbsp;|&nbsp; Análise Receita × Despesa — Conta Corrente e Poupança</p>
+  <p style="margin-top:5px;font-size:9pt;opacity:.6">Período analisado: <strong>${periLab}</strong> &nbsp;·&nbsp; Gerado em ${agora}</p>
+</div>
+
+<!-- CARDS -->
+<div class="sec">
+  <h2>Resumo do Período — ${periLab}</h2>
+  <div class="g4">
+    <div class="card cc"><h4>C/C Receitas</h4><div class="v p">${fmt(totCC.rec)}</div><small>${dm.length} meses</small></div>
+    <div class="card cc"><h4>C/C Despesas</h4><div class="v n">${fmt(totCC.des)}</div></div>
+    <div class="card ${totCC.saldo>=0?"cc":"al"}"><h4>C/C Resultado</h4><div class="v ${totCC.saldo>=0?"p":"n"}">${fmt(totCC.saldo)}</div><small>${totCC.saldo>=0?"Superávit":"Déficit"}</small></div>
+    <div class="card to"><h4>C/C Média/mês</h4><div class="v ${mediaCC>=0?"p":"n"}">${fmt(mediaCC)}</div><small>base: ult. 3 meses</small></div>
+  </div>
+  <div class="g4">
+    <div class="card pp"><h4>Poupança Receitas</h4><div class="v p">${fmt(totPP.rec)}</div><small>${dm.length} meses</small></div>
+    <div class="card pp"><h4>Poupança Despesas</h4><div class="v n">${fmt(totPP.des)}</div></div>
+    <div class="card ${totPP.saldo>=0?"pp":"al"}"><h4>Poupança Resultado</h4><div class="v ${totPP.saldo>=0?"p":"n"}">${fmt(totPP.saldo)}</div><small>${totPP.saldo>=0?"Superávit":"Déficit"}</small></div>
+    <div class="card to"><h4>Poupança Média/mês</h4><div class="v ${mediaPP>=0?"p":"n"}">${fmt(mediaPP)}</div><small>base: ult. 3 meses</small></div>
+  </div>
+</div>
+
+<!-- GRÁFICOS BARRAS -->
+<div class="sec">
+  <h2>Receita × Despesa — Últimos 6 Meses</h2>
+  <div class="g2">
+    <div><p style="font-weight:700;margin-bottom:8px;color:#2E4A78">Conta Corrente</p><canvas id="gCC"></canvas></div>
+    <div><p style="font-weight:700;margin-bottom:8px;color:#2E8B57">Conta Poupança</p><canvas id="gPP"></canvas></div>
+  </div>
+</div>
+
+<!-- GRÁFICO SALDO + PROJEÇÃO -->
+<div class="sec">
+  <h2>Saldo Mensal (histórico) + Projeção (próximos 3 meses)</h2>
+  <canvas id="gProj" style="max-height:230px"></canvas>
+  <p style="font-size:9pt;color:#888;margin-top:8px">⚠️ A projeção usa a média dos últimos 3 meses como tendência. Resultados atípicos (ex: despesas extraordinárias) podem distorcer a estimativa.</p>
+</div>
+
+<!-- TABELA -->
+<div class="sec">
+  <h2>Detalhamento Mensal</h2>
+  <table>
+    <thead><tr>
+      <th>Mês</th>
+      <th class="r">C/C Receita</th><th class="r">C/C Despesa</th><th class="r">C/C Saldo</th>
+      <th class="r">PP Receita</th><th class="r">PP Despesa</th><th class="r">PP Saldo</th>
+    </tr></thead>
+    <tbody>${tabelaLinhas}</tbody>
+    <tfoot><tr>
+      <td>TOTAL</td>
+      <td class="r" style="color:#1a6b35">${fmt(totCC.rec)}</td>
+      <td class="r" style="color:#8b1a1a">${fmt(totCC.des)}</td>
+      <td class="r" style="color:${corTCC}">${fmt(totCC.saldo)}</td>
+      <td class="r" style="color:#1a6b35">${fmt(totPP.rec)}</td>
+      <td class="r" style="color:#8b1a1a">${fmt(totPP.des)}</td>
+      <td class="r" style="color:${corTPP}">${fmt(totPP.saldo)}</td>
+    </tr></tfoot>
+  </table>
+</div>
+
+<!-- ANÁLISE -->
+<div class="sec">
+  <h2>Análise e Projeção</h2>
+  ${analiseCC()}
+  ${analisePP()}
+  ${recomendacoes()}
+</div>
+
+<div class="rodape">
+  Dashboard Financeiro — Sociedade Espírita Allan Kardec &nbsp;·&nbsp; nandomanfredo.github.io/ceak &nbsp;·&nbsp; Gerado em ${agora}
+</div>
+
+<script>
+const brlFmt = v => "R$ " + Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const tpB = (labels, recData, desData) => ({
+  type:"bar",
+  data:{labels,datasets:[
+    {label:"Receita",data:recData,backgroundColor:"rgba(46,139,87,.7)",borderColor:"#2E8B57",borderWidth:1,borderRadius:4},
+    {label:"Despesa",data:desData,backgroundColor:"rgba(181,61,61,.7)",borderColor:"#B53D3D",borderWidth:1,borderRadius:4}
+  ]},
+  options:{responsive:true,plugins:{legend:{position:"bottom"},
+    tooltip:{callbacks:{label:c=>" "+brlFmt(c.parsed.y)}}},
+    scales:{y:{ticks:{callback:v=>brlFmt(v)}}}}
+});
+const labs=${labs}, recCC=${recCC_j}, desCC=${desCC_j}, recPP=${recPP_j}, desPP=${desPP_j};
+const sCC=${sCC_j}, sPP=${sPP_j}, labPj=${labPj}, pCC=${pCC_j}, pPP=${pPP_j};
+new Chart(document.getElementById("gCC"),tpB(labs,recCC,desCC));
+new Chart(document.getElementById("gPP"),tpB(labs,recPP,desPP));
+
+// Linha saldo + projeção
+const n=${n6};
+const labsTodos=[...labs,...labPj.slice(1)];
+const nullArr=v=>v.map(()=>null);
+new Chart(document.getElementById("gProj"),{
+  type:"line",
+  data:{labels:labsTodos,datasets:[
+    {label:"C/C Saldo/mês",data:[...sCC,...nullArr(labPj).slice(1)],
+     borderColor:"#2E4A78",backgroundColor:"rgba(46,74,120,.08)",
+     borderWidth:2,pointRadius:4,fill:true,tension:0.3},
+    {label:"C/C Projeção",data:[...nullArr(sCC).slice(0,-1),sCC[n-1],...pCC.slice(1)],
+     borderColor:"#2E4A78",borderWidth:2,borderDash:[7,4],pointRadius:4,tension:0.3},
+    {label:"PP Saldo/mês",data:[...sPP,...nullArr(labPj).slice(1)],
+     borderColor:"#2E8B57",backgroundColor:"rgba(46,139,87,.08)",
+     borderWidth:2,pointRadius:4,fill:true,tension:0.3},
+    {label:"PP Projeção",data:[...nullArr(sPP).slice(0,-1),sPP[n-1],...pPP.slice(1)],
+     borderColor:"#2E8B57",borderWidth:2,borderDash:[7,4],pointRadius:4,tension:0.3}
+  ]},
+  options:{responsive:true,
+    plugins:{legend:{position:"bottom"},
+      tooltip:{callbacks:{label:c=>" "+c.dataset.label+": "+brlFmt(c.parsed.y||0)}}},
+    scales:{y:{ticks:{callback:v=>brlFmt(v)},
+      grid:{color:ctx=>ctx.tick.value===0?"rgba(0,0,0,.3)":"rgba(0,0,0,.06)"},
+      border:{dash:[4,4]}}}}
+});
+<\/script>
+</body></html>`;
+
+  const win = window.open("", "_blank", "width=1150,height=880");
+  win.document.write(html);
+  win.document.close();
 }
 
 // === IMPRIMIR LIVRO CAIXA ===
